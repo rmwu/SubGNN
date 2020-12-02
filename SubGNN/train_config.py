@@ -67,7 +67,7 @@ def get_optuna_suggest(param_dict, name, trial):
     args.extend(param_dict['args']) # resulting list will look something like this ['batch_size', [ 64, 128]]
     if "kwargs" in param_dict:
         kwargs = dict(param_dict["kwargs"])
-        return getattr(trial, module_name)(*args, **kwargs) 
+        return getattr(trial, module_name)(*args, **kwargs)
     else:
         return getattr(trial, module_name)(*args)
 
@@ -96,7 +96,7 @@ def build_model(run_config, trial = None):
     torch.manual_seed(hyperparameters['seed'])
     np.random.seed(hyperparameters['seed'])
     torch.cuda.manual_seed(hyperparameters['seed'])
-    torch.cuda.manual_seed_all(hyperparameters['seed']) 
+    torch.cuda.manual_seed_all(hyperparameters['seed'])
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -116,7 +116,7 @@ def build_trainer(run_config, hyperparameters, trial = None):
     else:
         p_refresh = 5
 
-    # set epochs, gpus, gradient clipping, etc. 
+    # set epochs, gpus, gradient clipping, etc.
     # if 'no_gpu' in run config, then use CPU
     trainer_kwargs={'max_epochs': hyperparameters['max_epochs'],
                     "gpus": 0 if 'no_gpu' in run_config else 1,
@@ -154,13 +154,13 @@ def build_trainer(run_config, hyperparameters, trial = None):
         trainer_kwargs['early_stop_callback'] = PyTorchLightningPruningCallback(trial, monitor=run_config['optuna']['monitor_metric'])
 
     trainer = pl.Trainer(**trainer_kwargs)
-    
-    return trainer, trainer_kwargs, logger.log_dir  
+
+    return trainer, trainer_kwargs, logger.log_dir
 
 def train_model(run_config, trial = None):
     '''
     Train a single model whose hyperparameters are specified in the run config
-    
+
     Returns the max (or min) metric specified by 'monitor_metric' in the run config
     '''
 
@@ -174,7 +174,7 @@ def train_model(run_config, trial = None):
     hparam_file = open(os.path.join(results_path, "hyperparams.json"),"w")
     hparam_file.write(json.dumps(hyperparameters, indent=4))
     hparam_file.close()
-    
+
     # dump trainer args to results dir
     tkwarg_file = open(os.path.join(results_path, "trainer_kwargs.json"),"w")
     pop_keys = [key for key in ['logger','profiler','early_stop_callback','checkpoint_callback'] if key in trainer_kwargs.keys()]
@@ -183,15 +183,15 @@ def train_model(run_config, trial = None):
     tkwarg_file.close()
 
     # train the model
-    trainer.fit(model)        
-        
+    trainer.fit(model)
+
     # write results to the results dir
     if results_path is not None:
         hparam_file = open(os.path.join(results_path, "final_metric_scores.json"),"w")
         results_serializable = {k:float(v) for k,v in model.metric_scores[-1].items()}
         hparam_file.write(json.dumps(results_serializable, indent=4))
         hparam_file.close()
-    
+
     # return the max (or min) metric specified by 'monitor_metric' in the run config
     all_scores = [score[run_config['optuna']['monitor_metric']].numpy() for score in model.metric_scores]
     if run_config['optuna']['opt_direction'] == "maximize":
@@ -212,7 +212,7 @@ def main():
     ## Set paths to data
     task = run_config['data']['task']
     embedding_type = run_config['hyperparams_fix']['embedding_type']
-    
+
     # paths to subgraphs, edge list, and shortest paths between all nodes in the graph
     run_config["subgraphs_path"] = os.path.join(task, "subgraphs.pth")
     run_config["graph_path"] = os.path.join(task, "edge_list.txt")
@@ -227,10 +227,10 @@ def main():
     if embedding_type == 'gin':
         run_config["embedding_path"] = os.path.join(task, "gin_embeddings.pth")
     elif embedding_type == 'graphsaint':
-        run_config["embedding_path"] = os.path.join(task, "graphsaint_gcn_embeddings.pth")
+        run_config["embedding_path"] = os.path.join(task, "gcn_graphsaint_embeddings.pth")
     else:
         raise NotImplementedError
-    
+
     # create a tensorboard directory in the folder specified by dir in the PROJECT ROOT folder
     if 'local' in run_config['tb'] and run_config['tb']['local']:
         run_config['tb']['dir_full'] = run_config['tb']['dir']
@@ -259,7 +259,7 @@ def main():
         sampler = optuna.samplers.TPESampler()
     elif run_config['optuna']['sampler'] == "random":
         sampler = optuna.samplers.RandomSampler()
-    
+
     # create an optuna study with the specified sampler, pruner, direction (e.g. maximize)
     # A SQLlite database is used to keep track of results
     # Will load in existing study if one exists
@@ -269,15 +269,15 @@ def main():
                                 storage= 'sqlite:///' + db_file,
                                 study_name=run_config['study_path'],
                                 load_if_exists=True)
-    
+
     study.optimize(lambda trial: train_model(run_config, trial), n_trials=run_config['optuna']['opt_n_trials'], n_jobs =run_config['optuna']['opt_n_cores'])
-    
+
     optuna_results_path = os.path.join(run_config['study_path'], 'optuna_study.pkl')
     print("Saving Study Results to", optuna_results_path)
     joblib.dump(study, optuna_results_path)
 
     print(study.best_params)
-    
+
 
 if __name__ == "__main__":
     main()

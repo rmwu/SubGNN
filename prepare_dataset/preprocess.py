@@ -40,7 +40,7 @@ def read_graphs(edge_f):
     print("Graph density", nx.density(nx_G))
     all_data = create_dataset(nx_G, feat_mat)
     print(all_data)
-    assert nx.is_connected(nx_G)
+    #assert nx.is_connected(nx_G)
     assert len(nx_G) == all_data.x.shape[0]
     return all_data
 
@@ -54,13 +54,13 @@ def create_dataset(G, feat_mat, split=False):
         - feat_mat (tensor): feature matrix for each node
 
     Return
-        - new_G (Data object): new Data object of base graph for Pytorch geometric 
+        - new_G (Data object): new Data object of base graph for Pytorch geometric
     """
 
-    edge_index = torch.tensor(list(G.edges)).t().contiguous() 
-    x = torch.tensor(feat_mat, dtype=torch.float) # Feature matrix    
-    y = torch.ones(edge_index.shape[1]) 
-    num_classes = len(torch.unique(y)) 
+    edge_index = torch.tensor(list(G.edges)).t().contiguous()
+    x = torch.tensor(feat_mat, dtype=torch.float) # Feature matrix
+    y = torch.ones(edge_index.shape[1])
+    num_classes = len(torch.unique(y))
 
     split_idx = np.arange(len(y))
     np.random.shuffle(split_idx)
@@ -80,7 +80,7 @@ def create_dataset(G, feat_mat, split=False):
     test_mask = torch.zeros(len(y), dtype=torch.bool)
     test_mask[test_idx] = 1
 
-    new_G = Data(x = x, y = y, num_classes = num_classes, edge_index = edge_index, train_mask = train_mask, val_mask = val_mask, test_mask = test_mask) 
+    new_G = Data(x = x, y = y, num_classes = num_classes, edge_index = edge_index, train_mask = train_mask, val_mask = val_mask, test_mask = test_mask)
     return new_G
 
 
@@ -97,11 +97,12 @@ def set_data(data, all_data, minibatch):
         - data (Data object): base graph as Pytorch Geometric Data object
     """
 
-    batch_size, n_id, adjs = data
-    data = Data(edge_index = adjs[0], n_id = n_id, e_id = adjs[1]) 
+    if minibatch == "NeighborSampler":
+        batch_size, n_id, adjs = data
+        data = Data(edge_index = adjs[0], n_id = n_id, e_id = adjs[1])
     data.x = all_data.x[data.n_id]
     data.train_mask = all_data.train_mask[data.e_id]
     data.val_mask = all_data.val_mask[data.e_id]
-    data.y = torch.ones(len(data.e_id)) 
+    data.y = torch.ones(len(data.e_id))
     return data
 

@@ -1,6 +1,8 @@
 # General
-import typing
 import sys
+import typing
+from collections import defaultdict
+
 import numpy as np
 
 #Networkx
@@ -23,73 +25,37 @@ import config
 
 def read_subgraphs(sub_f, split = True):
     '''
-    Read subgraphs from file
-    
-    Args
-       - sub_f (str): filename where subgraphs are stored
-    
-    Return for each train, val, test split:
-       - sub_G (list): list of nodes belonging to each subgraph	
-       - sub_G_label (list): labels for each subgraph
+        Read subgraphs from file
+        @param (str) sub_f filename where subgraphs are stored
+        @return list(list(int)) vertices in subgraph
     '''
-    
-    # Enumerate/track labels
-    label_idx = 0
-    labels = {}
-
-
-    # Train/Val/Test subgraphs
-    train_sub_G = []
-    val_sub_G = []
-    test_sub_G = []
-
-    # Train/Val/Test subgraph labels
-    train_sub_G_label = []
-    val_sub_G_label = []
-    test_sub_G_label = []
-
-    # Train/Val/Test masks
-    train_mask = []
-    val_mask = []
-    test_mask = []
-
-    multilabel = False
-
-    # Parse data
+    subgraphs = []
     with open(sub_f) as fin:
         subgraph_idx = 0
         for line in fin:
             nodes = [int(n) for n in line.split("\t")[0].split("-") if n != ""]
-            if len(nodes) != 0:
-                if len(nodes) == 1: print(nodes)
-                l = line.split("\t")[1].split("-")
-                if len(l) > 1: multilabel = True
-                for lab in l:    
-                    if lab not in labels.keys(): 
-                        labels[lab] = label_idx
-                        label_idx += 1
-                if line.split("\t")[2].strip() == "train":
-                    train_sub_G.append(nodes)
-                    train_sub_G_label.append([labels[lab] for lab in l])
-                    train_mask.append(subgraph_idx)
-                elif line.split("\t")[2].strip() == "val":
-                    val_sub_G.append(nodes)
-                    val_sub_G_label.append([labels[lab] for lab in l])
-                    val_mask.append(subgraph_idx)
-                elif line.split("\t")[2].strip() == "test":
-                    test_sub_G.append(nodes)
-                    test_sub_G_label.append([labels[lab] for lab in l])
-                    test_mask.append(subgraph_idx)
-                subgraph_idx += 1
-    if not multilabel:
-        train_sub_G_label = torch.tensor(train_sub_G_label).long().squeeze()
-        val_sub_G_label = torch.tensor(val_sub_G_label).long().squeeze()
-        test_sub_G_label = torch.tensor(test_sub_G_label).long().squeeze()
+            subgraphs.append(nodes)
+    return subgraphs
 
-    if len(val_mask) < len(test_mask):
-        return train_sub_G, train_sub_G_label, test_sub_G, test_sub_G_label, val_sub_G, val_sub_G_label
-
-    return train_sub_G, train_sub_G_label, val_sub_G, val_sub_G_label, test_sub_G, test_sub_G_label
+def read_subgraph_labels(label_f):
+    '''
+        >>>
+        @return
+            - list((int, int)) label pairs for positive indication
+            - list(int) labels corresponding to drugs (first of tuple)
+            - list(int) labels corresponding to disease (second of tuple)
+    '''
+    labels = defaultdict(list)
+    drugs, diseases = set(), set()
+    with open(label_f) as f:
+        for line in f:
+            v1, v2, label, split = line.strip().split('\t')
+            v1, v2, label = int(v1), int(v2), int(label)
+            labels[split].append((v1, v2, label))
+            # add to sets
+            drugs.add(v1)
+            diseases.add(v2)
+    return labels, drugs, diseases
 
 def calc_f1(logits, labels, avg_type='macro',  multilabel_binarizer=None):
     '''
@@ -101,7 +67,7 @@ def calc_f1(logits, labels, avg_type='macro',  multilabel_binarizer=None):
         thresh = torch.tensor([0.5]).to(probs.device)
         pred = (probs > thresh)
         score = f1_score(labels.cpu().detach(), pred.cpu().detach(), average=avg_type)
-        
+
     else: # multi-class, but not multi-label prediction
 
         pred = torch.argmax(logits, dim=-1) #get predictions by finding the indices with max logits
@@ -153,7 +119,7 @@ def get_component_border_neighborhood_set(networkx_graph, component, k, ego_grap
     '''
 
     # First, remove any padding that exists in the component
-    if type(component) is torch.Tensor: 
+    if type(component) is torch.Tensor:
         component_inds_non_neg = (component!=config.PAD_VALUE).nonzero().view(-1)
         component_set = {int(n) for n in component[component_inds_non_neg]}
     else:
@@ -161,7 +127,7 @@ def get_component_border_neighborhood_set(networkx_graph, component, k, ego_grap
 
     # calculate the ego graph for each node in the connected component & take the union of all nodes
     neighborhood = set()
-    for node in component_set: 
+    for node in component_set:
         if ego_graph_dict == None: # if it hasn't already been computed, calculate the ego graph (i.e. induced subgraph of neighbors centered at node with specified radius)
             ego_g = nx.ego_graph(networkx_graph, node, radius = k).nodes()
         else:
@@ -214,9 +180,9 @@ def masked_sum(
     vector: torch.Tensor, mask: torch.BoolTensor, dim: int, keepdim: bool = False) -> torch.Tensor:
     """
     **
-    Adapted from AllenNLP's masked mean: 
+    Adapted from AllenNLP's masked mean:
     https://github.com/allenai/allennlp/blob/90e98e56c46bc466d4ad7712bab93566afe5d1d0/allennlp/nn/util.py
-    ** 
+    **
     To calculate mean along certain dimensions on masked values
     # Parameters
     vector : `torch.Tensor`
@@ -231,7 +197,7 @@ def masked_sum(
     `torch.Tensor`
         A `torch.Tensor` of including the mean values.
     """
-    
+
     replaced_vector = vector.masked_fill(~mask, 0.0)
     value_sum = torch.sum(replaced_vector, dim=dim, keepdim=keepdim)
-    return value_sum 
+    return value_sum

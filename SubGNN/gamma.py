@@ -4,7 +4,7 @@ import time
 import numpy as np
 
 # Pytorch & Networkx
-import torch 
+import torch
 import networkx as nx
 
 # Dynamic time warping
@@ -47,9 +47,12 @@ def get_degree_sequence(graph, nodes, degree_dict=None, internal=True):
         external_degree_seq = [full_degree - i_degree for full_degree, i_degree in zip(graph_degree_seq, internal_degree_seq)]
         external_degree_seq.sort()
         return external_degree_seq
-   
+
 def calc_dist(a, b):
-    return ((max(a,b) + 1)/(min(a,b) + 1)) - 1 
+    denominator = min(a,b) + 1
+    if denominator == 0:
+        denominator = 1e-6
+    return ((max(a,b) + 1) / denominator) - 1
 
 def calc_dtw( component_degree, patch_degree):
     '''

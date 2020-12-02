@@ -31,7 +31,7 @@ class SG_MPN(MessagePassing):
         self.hparams = hparams
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.linear =  nn.Linear(hparams['node_embed_size'] * 2, hparams['node_embed_size']).to(self.device)
-        self.linear_position = nn.Linear(hparams['node_embed_size'],1).to(self.device) 
+        self.linear_position = nn.Linear(hparams['node_embed_size'],1).to(self.device)
 
     def create_patch_embedding_matrix(self,cc_embeds, cc_embed_mask, anchor_embeds, anchor_mask):
         '''
@@ -57,13 +57,13 @@ class SG_MPN(MessagePassing):
         '''
         # get indices into patch matrix corresponding to anchor patches
         anchor_inds = torch.tensor(range(reshaped_anchor_patch_ids.shape[0]))
-        
+
         # get indices into patch matrix corresponding to connected components
-        cc_inds = torch.tensor(range(reshaped_cc_ids.shape[0])) + reshaped_anchor_patch_ids.shape[0] 
-        
+        cc_inds = torch.tensor(range(reshaped_cc_ids.shape[0])) + reshaped_anchor_patch_ids.shape[0]
+
         # repeat CC indices n_anchor_patches times
         cc_inds_matched = cc_inds.repeat_interleave(n_anchor_patches)
-        
+
         # stack together two indices to create (2,E) edge matrix
         edge_index = torch.stack((anchor_inds, cc_inds_matched)).to(device=self.device)
         mask_inds = anchor_mask.view(-1, anchor_mask.shape[-1])[:,0]
@@ -78,15 +78,15 @@ class SG_MPN(MessagePassing):
         edge_index: (2, number of edges between components and anchor patches)
         anchors_sim_index: indices into sims matrix for the structure channel that specify which anchor patches we're using
         '''
-        n_cc = cc_ids.shape[0] 
+        n_cc = cc_ids.shape[0]
         n_anchor_patches = anchor_ids.shape[0]
-        
+
         batch_sz, max_n_cc, n_patch_options = sims.shape
         sims = sims.view(batch_sz * max_n_cc, n_patch_options)
 
 
         if anchors_sim_index != None: anchors_sim_index = anchors_sim_index * torch.unique(edge_index[1,:]).shape[0] # n unique CC
-        
+
         # NOTE: edge_index contains stacked anchor, cc embeddings
         if anchors_sim_index == None: # neighborhood, position channels
             anchor_indices = anchor_ids[edge_index[0,:],:] - 1 # get the indices into the similarity matrix of which anchors were sampled
@@ -122,16 +122,16 @@ class SG_MPN(MessagePassing):
         # 2) linear layer + normalization
         position_out = self.linear_position(pos_embeds_reshaped).squeeze(-1)
 
-        # optionally normalize the output of the linear layer (this is what P-GNN paper did) 
+        # optionally normalize the output of the linear layer (this is what P-GNN paper did)
         if 'norm_pos_struc_embed' in self.hparams and self.hparams['norm_pos_struc_embed']:
-            position_out = F.normalize(position_out, p=2, dim=-1) 
+            position_out = F.normalize(position_out, p=2, dim=-1)
         else: # otherwise, just push through a relu
-            position_out = F.relu(position_out) 
+            position_out = F.relu(position_out)
 
         return position_out #(n subgraphs * n_cc, n_anchors_per_cc )
 
     def forward(self, networkx_graph, sims, cc_ids, cc_embeds, cc_embed_mask, \
-            anchor_patches, anchor_embeds, anchor_mask, anchors_sim_index): 
+            anchor_patches, anchor_embeds, anchor_mask, anchors_sim_index):
         '''
         Performs a single message passing layer
 
@@ -139,7 +139,7 @@ class SG_MPN(MessagePassing):
             - cc_embed_matrix_reshaped: order-invariant hidden representation (batch_sz, max_n_cc, node embed dim)
             - position_struc_out_reshaped: property aware cc representation (batch_sz, max_n_cc, n_anchor_patches)
         '''
-        
+
         # reshape anchor patches & CC embeddings & stack together
         # NOTE: anchor patches then CC stacked in matrix
         patch_matrix = self.create_patch_embedding_matrix(cc_embeds, cc_embed_mask, anchor_embeds, anchor_mask)
@@ -159,8 +159,8 @@ class SG_MPN(MessagePassing):
 
         # Perform Message Passing
         # propagated_msgs: (length of concatenated anchor patches & cc, node dim size)
-        propagated_msgs, raw_msgs =  self.propagate(edge_index, x=patch_matrix, similarity=similarities) 
-        
+        propagated_msgs, raw_msgs =  self.propagate(edge_index, x=patch_matrix, similarity=similarities)
+
         # Generate Position/Structure Embeddings
         position_struc_out = self.generate_pos_struc_embeddings(raw_msgs, cc_ids, anchor_ids, edge_index, edge_index_mask)
 
@@ -170,19 +170,20 @@ class SG_MPN(MessagePassing):
 
         # reshape property aware position/structure embeddings
         position_struc_out_reshaped = position_struc_out.view(batch_sz, max_n_cc, -1)
-        
+
         return cc_embed_matrix_reshaped, position_struc_out_reshaped
 
     def propagate(self, edge_index, size=None, **kwargs):
-        # We need to reimplement propagate instead of relying on base class implementation because we need 
-        # to return the raw messages to generate the position/structure embeddings. 
+        # We need to reimplement propagate instead of relying on base class implementation because we need
+        # to return the raw messages to generate the position/structure embeddings.
         # Everything else is identical to propagate function from Pytorch Geometric.
-         
+
         r"""The initial call to start propagating messages.
+
         Args:
-            edge_index (Tensor or SparseTensor): A :obj:`torch.LongTensor` or a
+            adj (Tensor or SparseTensor): A :obj:`torch.LongTensor` or a
                 :obj:`torch_sparse.SparseTensor` that defines the underlying
-                graph connectivity/message passing flow.
+                message propagation.
                 :obj:`edge_index` holds the indices of a general (sparse)
                 assignment matrix of shape :obj:`[N, M]`.
                 If :obj:`edge_index` is of type :obj:`torch.LongTensor`, its
@@ -194,11 +195,12 @@ class SG_MPN(MessagePassing):
                 :obj:`torch_sparse.SparseTensor`, its sparse indices
                 :obj:`(row, col)` should relate to :obj:`row = edge_index[1]`
                 and :obj:`col = edge_index[0]`.
-                The major difference between both formats is that we need to
-                input the *transposed* sparse adjacency matrix into
+                Hence, the only difference between those formats is that we
+                need to input the *transposed* sparse adjacency matrix into
                 :func:`propagate`.
-            size (tuple, optional): The size :obj:`(N, M)` of the assignment
-                matrix in case :obj:`edge_index` is a :obj:`LongTensor`.
+            size (list or tuple, optional): The size :obj:`[N, M]` of the
+                assignment matrix in case :obj:`edge_index` is a
+                :obj:`LongTensor`.
                 If set to :obj:`None`, the size will be automatically inferred
                 and assumed to be quadratic.
                 This argument is ignored in case :obj:`edge_index` is a
@@ -206,29 +208,47 @@ class SG_MPN(MessagePassing):
             **kwargs: Any additional data which is needed to construct and
                 aggregate messages, and to update node embeddings.
         """
-        size = self.__check_input__(edge_index, size)
 
-        # run both functions in separation.
-        coll_dict = self.__collect__(self.__user_args__, edge_index, size,
-                                        kwargs)
+        # We need to distinguish between the old `edge_index` format and the
+        # new `torch_sparse.SparseTensor` format.
+        #mp_type = self.__get_mp_type__(edge_index)
+        mp_type = 'edge_index'  # educated guess because method above DNE
 
-        msg_kwargs = self.inspector.distribute('message', coll_dict)
+        if mp_type == 'edge_index':
+            if size is None:
+                size = [None, None]
+            elif isinstance(size, int):
+                size = [size, size]
+            elif torch.is_tensor(size):
+                size = size.tolist()
+            elif isinstance(size, tuple):
+                size = list(size)
+        elif mp_type == 'adj_t':
+            size = list(edge_index.sparse_sizes())[::-1]
+
+        assert isinstance(size, list)
+        assert len(size) == 2
+
+        # We collect all arguments used for message passing in `kwargs`.
+        kwargs = self.__collect__(edge_index, size, mp_type, kwargs)
+
+        # run message & aggregate functions in separation.
+        msg_kwargs = self.__distribute__(self.__msg_params__, kwargs)
         msg_out = self.message(**msg_kwargs)
 
-        aggr_kwargs = self.inspector.distribute('aggregate', coll_dict)
+        aggr_kwargs = self.__distribute__(self.__aggr_params__, kwargs)
         out = self.aggregate(msg_out, **aggr_kwargs)
 
-        update_kwargs = self.inspector.distribute('update', coll_dict)
+        update_kwargs = self.__distribute__(self.__update_params__, kwargs)
         out = self.update(out, **update_kwargs)
 
         return out, msg_out
-
 
     def message(self, x_j, similarity): #default is source to target
         '''
         The message is the anchor patch representation weighted by the similarity between the patch and the component
         '''
-        return similarity * x_j 
+        return similarity * x_j
 
     def update(self, aggr_out, x):
         '''
