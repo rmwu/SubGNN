@@ -8,6 +8,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from inspect import Parameter
 
 # Pytorch Geometric
 from torch_geometric.utils import add_self_loops
@@ -230,16 +231,21 @@ class SG_MPN(MessagePassing):
         assert len(size) == 2
 
         # We collect all arguments used for message passing in `kwargs`.
-        kwargs = self.__collect__(edge_index, size, mp_type, kwargs)
+        #kwargs = self.__collect__(edge_index, size, mp_type, kwargs)
+        user_args = ["x_j", "similarity", "x"]
+        kwargs = self.__collect__(user_args, edge_index, size, kwargs)
 
         # run message & aggregate functions in separation.
-        msg_kwargs = self.__distribute__(self.__msg_params__, kwargs)
+        #msg_kwargs = self.__distribute__(self.__msg_params__, kwargs)
+        msg_kwargs = self.inspector.distribute("message", kwargs)
         msg_out = self.message(**msg_kwargs)
 
-        aggr_kwargs = self.__distribute__(self.__aggr_params__, kwargs)
+        #aggr_kwargs = self.__distribute__(self.__aggr_params__, kwargs)
+        aggr_kwargs = self.inspector.distribute("aggregate", kwargs)
         out = self.aggregate(msg_out, **aggr_kwargs)
 
-        update_kwargs = self.__distribute__(self.__update_params__, kwargs)
+        #update_kwargs = self.__distribute__(self.__update_params__, kwargs)
+        update_kwargs = self.inspector.distribute("update", kwargs)
         out = self.update(out, **update_kwargs)
 
         return out, msg_out

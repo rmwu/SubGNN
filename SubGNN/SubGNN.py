@@ -296,7 +296,13 @@ class SubGNN(pl.LightningModule):
 
 
         # concatenate all layers
-        all_cc_embeds = torch.cat([init_cc_embeds] + outputs, dim=-1)
+        try:
+            all_cc_embeds = torch.cat([init_cc_embeds] + outputs, dim=-1)
+        except:
+            print(init_cc_embeds.shape)
+            for item in outputs:
+                print(item.shape)
+            sys.exit(0)
 
         # sum across all CC
         if "ff_attn" in self.hparams and self.hparams["ff_attn"]:
@@ -320,7 +326,7 @@ class SubGNN(pl.LightningModule):
 
     def combine(self, drugs, diseases):
         features = torch.cat([drugs, diseases], dim=1)
-        logits = torch.lin3(features)
+        logits = self.lin3(features)
         return logits
 
 ##################################################
@@ -360,13 +366,7 @@ class SubGNN(pl.LightningModule):
 
         # calculate loss
         labels = batch["labels"]
-
-        # >>>
-        print(features_drugs.shape)
-        print(features_diseases.shape)
-        print(logits.shape)
-        print(labels.shape)
-        import sys; sys.exit(0)
+        # WOW it made it 2020-12-02 19:51
 
         if len(labels.shape) == 0:
             labels = labels.unsqueeze(-1)
@@ -379,7 +379,9 @@ class SubGNN(pl.LightningModule):
         acc = subgraph_utils.calc_accuracy(logits, labels, multilabel_binarizer=self.multilabel_binarizer)
 
         logs = {"train_loss": loss, "train_acc": acc} # used for tensorboard
-        return {"loss": loss, "log": logs}
+        for k, v in logs.items():
+            self.log(k, v, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+        return {"loss": loss}
 
     def val_test_step(self, batch, batch_idx, is_test = False):
         """
@@ -403,7 +405,9 @@ class SubGNN(pl.LightningModule):
         logits = self.combine(features_drugs, features_diseases)
 
         # calc loss
-        if len(labels.shape) == 0: labels = labels.unsqueeze(-1)
+        labels = batch["labels"]
+        if len(labels.shape) == 0:
+            labels = labels.unsqueeze(-1)
         if self.multilabel:
             loss = self.loss(logits.squeeze(1), labels.type_as(logits))
         else:
@@ -493,8 +497,10 @@ class SubGNN(pl.LightningModule):
                 self.anchors_structure = init_anchors_structure(self.hparams,  self.structure_anchors, self.int_structure_anchor_random_walks, self.bor_structure_anchor_random_walks)
 
         self.metric_scores.append(tensorboard_logs) # keep track for optuna
+        for k, v in tensorboard_logs.items():
+            self.log(k, v, prog_bar=True, logger=True, on_epoch=True)
 
-        return {"avg_val_loss": avg_loss, "log": tensorboard_logs}
+        return {"avg_val_loss": avg_loss}
 
     def test_epoch_end(self, outputs):
         """
@@ -533,8 +539,10 @@ class SubGNN(pl.LightningModule):
                 tensorboard_logs["test_auroc_class_" + str(c)] = roc_auc_score(one_hot_labels[:, c].cpu(), logits[:, c].cpu())
 
         self.test_results = tensorboard_logs
+        for k, v in tensorboard_logs.items():
+            self.log(k, v, prog_bar=True, logger=True, on_epoch=True)
 
-        return {"avg_test_loss": avg_loss, "log": tensorboard_logs}
+        return {"avg_test_loss": avg_loss}
 
 ##################################################
 # Read in data
@@ -649,7 +657,7 @@ class SubGNN(pl.LightningModule):
         # we can compute the sum / max in a streaming fashion
         results = []
         # compute sum/max per batch
-        for idx in range(n_subg // batch_size):
+        for idx in range(n_subg // batch_size + 1):
             cc_id_batch = cc_id_list[idx*batch_size:(idx+1)*batch_size,:,:]
             ebd = self.node_embeddings(cc_id_batch.cuda(self.device_num))
             results.append(f_agg(ebd, 2))
@@ -1247,6 +1255,7 @@ class SubGNN(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams["learning_rate"])
         return optimizer
 
-    def backward(self, trainer, loss, optimizer, optimizer_idx):
+    #def backward(self, trainer, loss, optimizer, optimizer_idx):
+    def backward(self, loss, optimizer, optimizer_idx):
         loss.backward(retain_graph=True)
 
